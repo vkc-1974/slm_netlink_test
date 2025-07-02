@@ -39,3 +39,13 @@
 
 # debug information files
 *.dwo
+
+*.ko
+*.o.cmd
+*.ko.cmd
+*.mod.c
+*.mod.cmd
+modules.order
+.Module.symvers.cmd
+.modules.order.cmd
+Module.symvers
