@@ -108,7 +108,12 @@ static void slm_netlink_send_msg(const char* msg_body, size_t msg_len) {
 
     // Unicast the message to the client by using its PID (client_pid)
     if ((res = nlmsg_unicast(slm_unit.nl_socket, sk_buffer_out, slm_unit.client_pid)) < 0) {
-        pr_err("SLM: Error sending to user: %d\n", res);
+        pr_err("%s: Error sending to user %d due to the issue: %d\n",
+               MODULE_NAME,
+               slm_unit.client_pid,
+               res);
+        slm_unit.client_pid = 0;
+        return;
     }
 }
 
@@ -152,7 +157,11 @@ static int slm_handler_pre(struct kprobe* probe, struct pt_regs *regs) {
 
 static struct sock* slm_netlink_init(const int nl_unit_id) {
     struct netlink_kernel_cfg nl_cfg = {
-        .input = slm_netlink_recv_msg
+        .input = slm_netlink_recv_msg,
+        .flags = 0,
+        .groups = 0,
+        //// .cb_mutex = NULL,
+        //// .module = THIS_MODULE
     };
     struct sock* nl_socket = NULL;
     if ((nl_socket = netlink_kernel_create(&init_net, nl_unit_id, &nl_cfg)) == NULL) {

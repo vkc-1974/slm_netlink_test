@@ -10,7 +10,7 @@ clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 	rm -f slm_user
 
-slm_user: slm_user.c
-	$(CC) -o slm_user slm_user.c
+slm_user: slm_user.c Makefile
+	$(CC) -o slm_user -ggdb -O0 slm_user.c
 
 .PHONY: all clean
