@@ -1,4 +1,11 @@
-obj-m += slm_netlink.o
+obj-m := \
+	slm_netlink.o
+
+slm_netlink-objs := \
+	slm_netlink_main.o   \
+	slm_netlink_socket.o \
+	slm_netlink_kprobe.o \
+	slm_netlink_procfs.o
 
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
