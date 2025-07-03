@@ -11,9 +11,12 @@
 #include <linux/kprobes.h>
 #include <linux/version.h>
 #include <linux/uaccess.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #define NETLINK_USER 25
 #define MAX_PAYLOAD 128
+#define PROCFS_SLM_NETLINK_UNIT_ID "slm_netlink_unit_id"
 
 struct slm_module_data {
     //
@@ -235,6 +238,23 @@ static void slm_kprobe_release_all(void) {
     slm_kprobe_release(&slm_unit.kp_close);
 }
 
+
+static int slm_proc_show(struct seq_file* m, void* v) {
+    seq_printf(m, "%d\n", NETLINK_USER);
+    return 0;
+}
+
+static int slm_proc_open(struct inode* inode, struct file* file) {
+    return single_open(file, slm_proc_show, NULL);
+}
+
+static const struct proc_ops slm_proc_ops = {
+    .proc_open = slm_proc_open,
+    .proc_read = seq_read,
+    .proc_lseek = seq_lseek,
+    .proc_release = single_release,
+};
+
 static int __init slm_init(void) {
     bool init_result = false;
     struct sock* nl_socket = NULL;
@@ -300,11 +320,13 @@ static int __init slm_init(void) {
     }
 
     slm_unit.nl_socket = nl_socket;
+    proc_create(PROCFS_SLM_NETLINK_UNIT_ID, 0, NULL, &slm_proc_ops);
 
     return 0;
 }
 
 static void __exit slm_exit(void) {
+    remove_proc_entry(PROCFS_SLM_NETLINK_UNIT_ID, NULL);
     slm_kprobe_release_all();
     slm_netlink_release(slm_unit.nl_socket);
 
@@ -316,6 +338,6 @@ module_init(slm_init);
 module_exit(slm_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_VERSION("0.0.1");
+MODULE_VERSION("0.0.2");
 MODULE_AUTHOR("Victor Kovalevich");
 MODULE_DESCRIPTION("SLM kernel module with Netlink, waits for user-space registration before sending notifications");
