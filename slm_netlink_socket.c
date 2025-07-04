@@ -53,9 +53,11 @@ void slm_netlink_socket_release(struct sock* nl_socket) {
 
 // Sending of a message to the client (if it is registered)
 void slm_netlink_socket_send_msg(const char* msg_body, size_t msg_len) {
+    static const unsigned int max_attempt_number = 5;
     struct sk_buff* sk_buffer_out;
     struct nlmsghdr* nl_header;
     int res;
+    unsigned int i;
 
     if (slm_netlink_context_get_nl_socket() == NULL ||
         slm_netlink_context_get_client_pid() <= 0) {
@@ -74,14 +76,28 @@ void slm_netlink_socket_send_msg(const char* msg_body, size_t msg_len) {
     memcpy(nlmsg_data(nl_header), msg_body, msg_len);
 
     // Unicast the message to the client by using its PID (client_pid)
-    if ((res = nlmsg_unicast(slm_netlink_context_get_nl_socket(),
-                             sk_buffer_out,
-                             slm_netlink_context_get_client_pid())) < 0) {
-        pr_err("%s: Error sending to user %d due to the issue: %d\n",
+    i = max_attempt_number;
+
+    while(i > 0) {
+        if ((res = nlmsg_unicast(slm_netlink_context_get_nl_socket(),
+                                 sk_buffer_out,
+                                 slm_netlink_context_get_client_pid())) < 0) {
+            pr_err("%s: Error sending to user %d due to the issue: %d",
+                   MODULE_NAME,
+                   slm_netlink_context_get_client_pid(),
+                   res);
+            i--;
+        } else {
+            break;
+        }
+    }
+
+    if (i == 0) {
+        pr_err("%s: Connection to user %d is closed "
+               "as number of message sending attempts %u has been expired\n",
                MODULE_NAME,
                slm_netlink_context_get_client_pid(),
-               res);
+               max_attempt_number);
         slm_netlink_context_set_client_pid(0);
-        return;
     }
 }

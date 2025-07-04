@@ -16,14 +16,33 @@
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/spinlock.h>
+#include <linux/bitmap.h>
+#include <linux/slab.h>
+#include <linux/types.h>
+#include <linux/errno.h>
 
 #define NETLINK_USER 25
-#define MAX_PAYLOAD 128
+#define MAX_PAYLOAD 1024
 #define MODULE_NAME                "slm_netlink"
 #define PROCFS_SLM_NETLINK_DIR     (MODULE_NAME)
 #define PROCFS_SLM_NETLINK_UNIT_ID "unit_id"
 #define PROCFS_SLM_NETLINK_FILTERS "filters"
 #define PROCFS_SLM_NETLINK_PIDS    "pids"
+
+struct slm_netlink_buffer_pool {
+    void **bufs;
+    unsigned long *bitmap;
+    unsigned int size;
+    unsigned int count;
+    spinlock_t lock;
+    atomic_t in_use;
+};
+
+static inline int slm_netlink_buffer_pool_in_use(struct slm_netlink_buffer_pool* pool)
+{
+    return atomic_read(&pool->in_use);
+}
 
 struct slm_netlink_context_data {
     //
@@ -34,15 +53,19 @@ struct slm_netlink_context_data {
     int client_pid;
     //
     // Kprobes
-    struct kprobe kp_create;
-    struct kprobe kp_open;
-    struct kprobe kp_read;
-    struct kprobe kp_write;
-    struct kprobe kp_lseek;
-    struct kprobe kp_close;
+    struct kprobe kp_vfs_creat;
+    struct kprobe kp_vfs_open;
+    struct kprobe kp_vfs_openat;
+    struct kprobe kp_vfs_openat2;
+    struct kprobe kp_vfs_close;
+    struct kprobe kp_vfs_close_range;
     //
     // Procfs directory with module specific entries
     struct proc_dir_entry* proc_dir;
+    //
+    // Pool of the buffers used to prepare ans send the messages
+    // via NETLINK channel
+    struct slm_netlink_buffer_pool buffer_pool;
 };
 
 //
@@ -50,7 +73,14 @@ struct slm_netlink_context_data {
 int slm_netlink_context_get_client_pid(void);
 int slm_netlink_context_set_client_pid(const int new_client_pid);
 struct sock* slm_netlink_context_get_nl_socket(void);
-///// struct sock* slm_netlink_context_set_nl_socket(struct sock* new_nl_socket);
+bool slm_netlink_context_check_uid(const int uid);
+bool slm_netlink_context_buffer_pool_init(struct slm_netlink_buffer_pool* pool,
+                                          unsigned int count,
+                                          unsigned int size);
+void slm_netlink_context_buffer_pool_destroy(struct slm_netlink_buffer_pool* pool);
+void* slm_netlink_context_buffer_pool_alloc(void);
+unsigned int slm_netlink_context_buffer_pool_get_buffer_size(void);
+bool slm_netlink_context_buffer_pool_free(void* buf);
 
 //
 // NETLINK communication specific routines
@@ -63,10 +93,21 @@ void slm_netlink_socket_send_msg(const char* msg_body,
 // Kprobe specific routines
 int slm_netlink_kprobe_handler_pre(struct kprobe* probe,
                                    struct pt_regs *regs);
-bool slm_netlink_kprobe_setup(struct kprobe* probe,
-                              const char* symbol_name,
-                              kprobe_pre_handler_t pre_handler,
-                              kprobe_post_handler_t post_handler);
+
+int slm_netlink_kprobe_handler_vfs_creat_pre(struct kprobe* probe,
+                                             struct pt_regs *regs);
+int slm_netlink_kprobe_handler_vfs_open_pre(struct kprobe* probe,
+                                            struct pt_regs *regs);
+int slm_netlink_kprobe_handler_vfs_openat_pre(struct kprobe* probe,
+                                            struct pt_regs *regs);
+int slm_netlink_kprobe_handler_vfs_openat2_pre(struct kprobe* probe,
+                                               struct pt_regs *regs);
+int slm_netlink_kprobe_handler_vfs_close_pre(struct kprobe* probe,
+                                             struct pt_regs *regs);
+int slm_netlink_kprobe_handler_vfs_close_range_pre(struct kprobe* probe,
+                                                   struct pt_regs *regs);
+
+bool slm_netlink_kprobe_setup(struct kprobe* probe);
 void slm_netlink_kprobe_release(struct kprobe* probe);
 
 //
